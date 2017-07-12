@@ -385,6 +385,21 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
     }
 }
 
+static void ble_our_service_on_ble_evt(ble_os_t *p_our_service, ble_evt_t * p_ble_evt);
+{
+		switch (p_ble_evt->header.evt_id)
+		{
+				case BLE_GAP_EVT_CONNECTED:
+						p_our_service->conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
+						break;
+				case BLE_GAP_EVT_DISCONNECTED:
+						p_our_service->conn_handle = BLE_CONN_HANDLE_INVALID;
+						break;
+				default:
+						// No implementation needed.
+						break;
+		}
+}
 
 /**@brief Function for dispatching a SoftDevice event to all modules with a SoftDevice
  *        event handler.
@@ -401,7 +416,7 @@ static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
     on_ble_evt(p_ble_evt);
     ble_advertising_on_ble_evt(p_ble_evt);
     bsp_btn_ble_on_ble_evt(p_ble_evt);
-
+		ble_our_service_on_ble_evt(&m_our_service, p_ble_evt);
 }
 
 
@@ -638,7 +653,6 @@ static uint32_t our_char_add(ble_os_t * p_our_service)
 		ble_uuid128_t       base_uuid = BLE_UUID_OUR_BASE_UUID;
 		ble_gatts_char_md_t char_md;
 
-
 		memset(&char_md, 0, sizeof(char_md));
 		char_md.char_props.read = 1;
 		char_md.char_props.write = 1;
@@ -653,20 +667,31 @@ static uint32_t our_char_add(ble_os_t * p_our_service)
 		memset(&attr_md, 0, sizeof(attr_md));
 		attr_md.vloc	= BLE_GATTS_VLOC_STACK;
 	
+		// Step 2.G, Enable GAP ATT READ/WRITE
+		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.read_perm);
+		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.write_perm);	
+	
+	
 		// Step 2.C, Configure the Characteristic Value Attribute
 		ble_gatts_attr_t    attr_char_value;
 		memset(&attr_char_value, 0, sizeof(attr_char_value));    
 		attr_char_value.p_uuid      = &char_uuid;
 		attr_char_value.p_attr_md   = &attr_md;
 				
-		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.read_perm);
-		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.write_perm);
-		
+		// Step 2.H, Set characteristic value length
 		attr_char_value.max_len     = 4;
 		attr_char_value.init_len    = 4;
 		uint8_t value[4]            = {0x12,0x34,0x56,0x78};
 		attr_char_value.p_value     = value;
 
+		// 3.A Enable CCCD
+		ble_gatts_attr_md_t cccd_md;
+		memset(&cccd_md, 0, sizeof(cccd_md));
+		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.read_perm);
+		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.write_perm);
+		cccd_md.vloc                = BLE_GATTS_VLOC_STACK;    
+		char_md.p_cccd_md           = &cccd_md;
+		char_md.char_props.notify   = 1;
 	
 		// Step 2.E, Add our new characteristic to the service	
 		err_code = sd_ble_gatts_characteristic_add(p_our_service->service_handle,
@@ -691,6 +716,9 @@ static void our_service_init(ble_os_t *p_our_service)
     ble_uuid_t        service_uuid;
     ble_uuid128_t     base_uuid = BLE_UUID_OUR_BASE_UUID;
 	
+		// Step 3.B
+		p_our_service->conn_handle = BLE_CONN_HANDLE_INVALID;
+	
     service_uuid.uuid = BLE_UUID_OUR_SERVICE;
 	
     err_code = sd_ble_uuid_vs_add(&base_uuid, &service_uuid.type);
@@ -700,13 +728,13 @@ static void our_service_init(ble_os_t *p_our_service)
                                         &service_uuid,
                                         &p_our_service->service_handle);
     APP_ERROR_CHECK(err_code);
-	
-		our_char_add(p_our_service);
-	
-    SEGGER_RTT_WriteString(0, "Exectuing our_service_init().\n");
+
+	  SEGGER_RTT_WriteString(0, "Exectuing our_service_init().\n");
     SEGGER_RTT_printf(0, "Service UUID: 0x%#04x\n", service_uuid.uuid);
     SEGGER_RTT_printf(0, "Service UUID type: 0x%#02x\n", service_uuid.type);
     SEGGER_RTT_printf(0, "Service handle: 0x%#04x\n", p_our_service->service_handle);	
+	
+		our_char_add(p_our_service);
 }
 
 /**@brief Application main function.
@@ -727,8 +755,6 @@ int main(void)
     advertising_init();
     conn_params_init();
 	
-		SEGGER_RTT_WriteString(0, "Before mainloop\n");
-
     err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
     APP_ERROR_CHECK(err_code);
 
