@@ -83,16 +83,16 @@ static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;
 static ble_uuid_t                       m_adv_uuids[] = {{BLE_UUID_NUS_SERVICE, NUS_SERVICE_UUID_TYPE}};  /**< Universally unique service identifier. */
 
 /**
- * @brief This structure contains various status information for our service. 
+ * @brief This structure contains various status information for our service.
  * It only holds one entry now, but will be populated with more items as we go.
- * The name is based on the naming convention used in Nordic's SDKs. 
- * 'ble’ indicates that it is a Bluetooth Low Energy relevant structure and 
- * ‘os’ is short for Our Service). 
+ * The name is based on the naming convention used in Nordic's SDKs.
+ * 'ble’ indicates that it is a Bluetooth Low Energy relevant structure and
+ * ‘os’ is short for Our Service).
  */
 typedef struct
 {
-    uint16_t                    conn_handle; 
-    uint16_t                    service_handle;        
+    uint16_t                    conn_handle;
+    uint16_t                    service_handle;
     ble_gatts_char_handles_t    char_handles;
 }ble_os_t;
 
@@ -173,19 +173,7 @@ static void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t lengt
  */
 static void services_init(void)
 {
-#if 0	
-    uint32_t       err_code;
-    ble_nus_init_t nus_init;
-
-    memset(&nus_init, 0, sizeof(nus_init));
-
-    nus_init.data_handler = nus_data_handler;
-
-    err_code = ble_nus_init(&m_nus, &nus_init);
-    APP_ERROR_CHECK(err_code);
-#else	
-		our_service_init(&m_our_service);
-#endif
+    our_service_init(&m_our_service);
 }
 
 
@@ -401,6 +389,36 @@ static void ble_our_service_on_ble_evt(ble_os_t *p_our_service, ble_evt_t * p_bl
 		}
 }
 
+// ALREADY_DONE_FOR_YOU: Function to be called when updating characteristic value
+// 3.E: Update characteristic value
+static void our_temperature_characteristic_update(ble_os_t *p_our_service, int32_t *temperature_value)
+{
+    if (p_our_service->conn_handle != BLE_CONN_HANDLE_INVALID)
+    {
+        uint16_t               len = 4;
+        ble_gatts_hvx_params_t hvx_params;
+        memset(&hvx_params, 0, sizeof(hvx_params));
+
+        hvx_params.handle = p_our_service->char_handles.value_handle;
+        hvx_params.type   = BLE_GATT_HVX_NOTIFICATION;
+        hvx_params.offset = 0;
+        hvx_params.p_len  = &len;
+        hvx_params.p_data = (uint8_t*)temperature_value;
+
+        sd_ble_gatts_hvx(p_our_service->conn_handle, &hvx_params);
+    }
+}
+
+// ALREADY_DONE_FOR_YOU: This is a timer event handler
+// 3.F: Update Characteristic with temperature data
+static void timer_timeout_handler(void * p_context)
+{
+    int32_t temperature = 0;
+    sd_temp_get(&temperature);
+    our_termperature_characteristic_update(&m_our_service, &temperature);
+    nrf_gpio_pin_toggle(LED_4);
+}
+
 /**@brief Function for dispatching a SoftDevice event to all modules with a SoftDevice
  *        event handler.
  *
@@ -412,11 +430,11 @@ static void ble_our_service_on_ble_evt(ble_os_t *p_our_service, ble_evt_t * p_bl
 static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 {
     ble_conn_params_on_ble_evt(p_ble_evt);
-    ble_nus_on_ble_evt(&m_nus, p_ble_evt);
+    bsp_btn_ble_on_ble_evt(p_ble_evt);
+//    ble_nus_on_ble_evt(&m_nus, p_ble_evt);
     on_ble_evt(p_ble_evt);
     ble_advertising_on_ble_evt(p_ble_evt);
-    bsp_btn_ble_on_ble_evt(p_ble_evt);
-		ble_our_service_on_ble_evt(&m_our_service, p_ble_evt);
+    ble_our_service_on_ble_evt(&m_our_service, p_ble_evt);
 }
 
 
@@ -572,20 +590,20 @@ static void uart_init(void)
  */
 static void advertising_init(void)
 {
-		uint32_t      err_code;
+    uint32_t      err_code;
     ble_advdata_t advdata;  // Struct containing advertising parameters
     ble_advdata_manuf_data_t        		manuf_data; // Variable to hold manufacturer specific data
     uint8_t data[]                      = "Themo"; // Our data to adverise
-	
+
     manuf_data.company_identifier       = 0x0059; // Nordics company ID
-    manuf_data.data.p_data              = data;     
+    manuf_data.data.p_data              = data;
     manuf_data.data.size                = sizeof(data);
 
     // Build advertising data struct to pass into @ref ble_advertising_init.
     memset(&advdata, 0, sizeof(advdata));
     advdata.name_type          = BLE_ADVDATA_FULL_NAME;
     advdata.include_appearance = false;
-    advdata.flags              = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;	
+    advdata.flags              = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;
 
 		advdata.p_manuf_specific_data   = &manuf_data;
     advdata.include_appearance      = false;
@@ -593,9 +611,9 @@ static void advertising_init(void)
     // Prepare the scan response Manufacturer specific data packet
     ble_advdata_manuf_data_t manuf_data_response;
     uint8_t data_response[] = "Hello!"; // Remember there is a 0 terminator at the end of string
-		
-    manuf_data_response.company_identifier       = 0x0059;               
-    manuf_data_response.data.p_data              = data_response;        
+
+    manuf_data_response.company_identifier       = 0x0059;
+    manuf_data_response.data.p_data              = data_response;
     manuf_data_response.data.size                = sizeof(data_response);
 
     ble_advdata_t   advdata_response;// Declare and populate a scan response packet
@@ -603,7 +621,7 @@ static void advertising_init(void)
     // Always initialize all fields in structs to zero or you might get unexpected behaviour
     memset(&advdata_response, 0, sizeof(advdata_response));
     // Populate the scan response packet
-    advdata_response.name_type               = BLE_ADVDATA_NO_NAME; 
+    advdata_response.name_type               = BLE_ADVDATA_NO_NAME;
     advdata_response.p_manuf_specific_data   = &manuf_data_response;
 
     ble_adv_modes_config_t options = {0};
@@ -648,63 +666,63 @@ static void power_manage(void)
  */
 static uint32_t our_char_add(ble_os_t * p_our_service)
 {
-		uint32_t            err_code;
-		ble_uuid_t          char_uuid;
-		ble_uuid128_t       base_uuid = BLE_UUID_OUR_BASE_UUID;
-		ble_gatts_char_md_t char_md;
+    uint32_t            err_code;
+    ble_uuid_t          char_uuid;
+    ble_uuid128_t       base_uuid = BLE_UUID_OUR_BASE_UUID;
+    ble_gatts_char_md_t char_md;
 
-		memset(&char_md, 0, sizeof(char_md));
-		char_md.char_props.read = 1;
-		char_md.char_props.write = 1;
-	
-		// Step 2.A, Use custom UUID to define characteristic value type
-		char_uuid.uuid      = BLE_UUID_OUR_CHARACTERISTC_UUID;
-		err_code = sd_ble_uuid_vs_add(&base_uuid, &char_uuid.type);
-		APP_ERROR_CHECK(err_code);
-	
-		// Step 2.B, Configure the Attribute Metadata
-		ble_gatts_attr_md_t attr_md;
-		memset(&attr_md, 0, sizeof(attr_md));
-		attr_md.vloc	= BLE_GATTS_VLOC_STACK;
-	
-		// Step 2.G, Enable GAP ATT READ/WRITE
-		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.read_perm);
-		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.write_perm);	
-	
-	
-		// Step 2.C, Configure the Characteristic Value Attribute
-		ble_gatts_attr_t    attr_char_value;
-		memset(&attr_char_value, 0, sizeof(attr_char_value));    
-		attr_char_value.p_uuid      = &char_uuid;
-		attr_char_value.p_attr_md   = &attr_md;
-				
-		// Step 2.H, Set characteristic value length
-		attr_char_value.max_len     = 4;
-		attr_char_value.init_len    = 4;
-		uint8_t value[4]            = {0x12,0x34,0x56,0x78};
-		attr_char_value.p_value     = value;
+    memset(&char_md, 0, sizeof(char_md));
+    char_md.char_props.read = 1;
+    char_md.char_props.write = 1;
 
-		// 3.A Enable CCCD
-		ble_gatts_attr_md_t cccd_md;
-		memset(&cccd_md, 0, sizeof(cccd_md));
-		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.read_perm);
-		BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.write_perm);
-		cccd_md.vloc                = BLE_GATTS_VLOC_STACK;    
-		char_md.p_cccd_md           = &cccd_md;
-		char_md.char_props.notify   = 1;
-	
-		// Step 2.E, Add our new characteristic to the service	
-		err_code = sd_ble_gatts_characteristic_add(p_our_service->service_handle,
-                                   &char_md,
-                                   &attr_char_value,
-                                   &p_our_service->char_handles);
-		APP_ERROR_CHECK(err_code);
-	
+    // Step 2.A, Use custom UUID to define characteristic value type
+    char_uuid.uuid      = BLE_UUID_OUR_CHARACTERISTC_UUID;
+    err_code = sd_ble_uuid_vs_add(&base_uuid, &char_uuid.type);
+    APP_ERROR_CHECK(err_code);
+
+    // Step 2.B, Configure the Attribute Metadata
+    ble_gatts_attr_md_t attr_md;
+    memset(&attr_md, 0, sizeof(attr_md));
+    attr_md.vloc	= BLE_GATTS_VLOC_STACK;
+
+    // Step 2.G, Enable GAP ATT READ/WRITE
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.read_perm);
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.write_perm);
+
+
+    // Step 2.C, Configure the Characteristic Value Attribute
+    ble_gatts_attr_t    attr_char_value;
+    memset(&attr_char_value, 0, sizeof(attr_char_value));
+    attr_char_value.p_uuid      = &char_uuid;
+    attr_char_value.p_attr_md   = &attr_md;
+
+    // Step 2.H, Set characteristic value length
+    attr_char_value.max_len     = 4;
+    attr_char_value.init_len    = 4;
+    uint8_t value[4]            = {0x12,0x34,0x56,0x78};
+    attr_char_value.p_value     = value;
+
+    // 3.A Enable CCCD
+    ble_gatts_attr_md_t cccd_md;
+    memset(&cccd_md, 0, sizeof(cccd_md));
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.read_perm);
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.write_perm);
+    cccd_md.vloc                = BLE_GATTS_VLOC_STACK;
+    char_md.p_cccd_md           = &cccd_md;
+    char_md.char_props.notify   = 1;
+
+    // Step 2.E, Add our new characteristic to the service
+    err_code = sd_ble_gatts_characteristic_add(p_our_service->service_handle,
+            &char_md,
+            &attr_char_value,
+            &p_our_service->char_handles);
+    APP_ERROR_CHECK(err_code);
+
     SEGGER_RTT_WriteString(0, "Exectuing our_char_add().\n");
     SEGGER_RTT_printf(0, "Char UUID: 0x%#04x\n", char_uuid.uuid);
     SEGGER_RTT_printf(0, "char UUID type: 0x%#02x\n", char_uuid.type);
     SEGGER_RTT_printf(0, "Service handle: 0x%#04x\n", p_our_service->service_handle);
-		SEGGER_RTT_printf(0, "Characteristic handle: 0x%#04x\n", p_our_service->char_handles);
+    SEGGER_RTT_printf(0, "Characteristic handle: 0x%#04x\n", p_our_service->char_handles);
 }
 
 /** Our service init
@@ -715,26 +733,26 @@ static void our_service_init(ble_os_t *p_our_service)
 
     ble_uuid_t        service_uuid;
     ble_uuid128_t     base_uuid = BLE_UUID_OUR_BASE_UUID;
-	
-		// Step 3.B
-		p_our_service->conn_handle = BLE_CONN_HANDLE_INVALID;
-	
-    service_uuid.uuid = BLE_UUID_OUR_SERVICE;
-	
-    err_code = sd_ble_uuid_vs_add(&base_uuid, &service_uuid.type);
-    APP_ERROR_CHECK(err_code);    
 
-    err_code = sd_ble_gatts_service_add(BLE_GATTS_SRVC_TYPE_PRIMARY,
-                                        &service_uuid,
-                                        &p_our_service->service_handle);
+    // Step 3.B
+    p_our_service->conn_handle = BLE_CONN_HANDLE_INVALID;
+
+    service_uuid.uuid = BLE_UUID_OUR_SERVICE;
+
+    err_code = sd_ble_uuid_vs_add(&base_uuid, &service_uuid.type);
     APP_ERROR_CHECK(err_code);
 
-	  SEGGER_RTT_WriteString(0, "Exectuing our_service_init().\n");
+    err_code = sd_ble_gatts_service_add(BLE_GATTS_SRVC_TYPE_PRIMARY,
+            &service_uuid,
+            &p_our_service->service_handle);
+    APP_ERROR_CHECK(err_code);
+
+    SEGGER_RTT_WriteString(0, "Executing our_service_init().\n");
     SEGGER_RTT_printf(0, "Service UUID: 0x%#04x\n", service_uuid.uuid);
     SEGGER_RTT_printf(0, "Service UUID type: 0x%#02x\n", service_uuid.type);
-    SEGGER_RTT_printf(0, "Service handle: 0x%#04x\n", p_our_service->service_handle);	
-	
-		our_char_add(p_our_service);
+    SEGGER_RTT_printf(0, "Service handle: 0x%#04x\n", p_our_service->service_handle);
+
+    our_char_add(p_our_service);
 }
 
 /**@brief Application main function.
@@ -754,7 +772,7 @@ int main(void)
     services_init();
     advertising_init();
     conn_params_init();
-	
+
     err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
     APP_ERROR_CHECK(err_code);
 
